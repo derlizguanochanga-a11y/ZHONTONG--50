@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Zhontong 50pax - Gestión de Pasajeros</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         :root {
             --primary-color: #00695C;
@@ -178,26 +177,19 @@
         .badge-pending { background: #FFCCBC; color: #BF360C; }
 
         /* --- ESTILOS ESPECIALES PARA MODO SOLO VISTA --- */
-        
-        /* 1. Ocultar la columna de Estado en la tabla (la última columna) */
         body.view-mode th:last-child, 
         body.view-mode td:last-child {
             display: none !important;
         }
-
-        /* 2. Forzar que todos los asientos pagados se vean igual que los ocupados (Gris neutral) */
         body.view-mode .seat.paid {
             background-color: var(--seat-occupied) !important;
             border-color: #78909C !important;
             color: #555 !important;
         }
-
-        /* 3. Ocultar la leyenda de colores para no confundir */
-        body.view-mode .legend {
+        body.view-mode .legend,
+        body.view-mode .controls {
             display: none !important;
         }
-
-        /* 4. Quitar efectos de cursor */
         body.view-mode .seat, body.view-mode tr {
             cursor: default !important;
         }
@@ -237,6 +229,9 @@
         .btn-cancel { background: #78909C; flex: 1; }
         .btn-delete { background: #D32F2F; width: 100%; margin-top: 10px; }
 
+        /* Input oculto para copiar */
+        #tempCopyInput { position: absolute; left: -9999px; }
+
     </style>
 </head>
 <body>
@@ -247,7 +242,7 @@
 
     <div class="controls">
         <button class="btn btn-link" onclick="copyViewLink()">🔗 Link Solo Vista</button>
-        <button class="btn btn-excel" onclick="downloadExcel()">📊 Descargar Excel</button>
+        <button class="btn btn-excel" onclick="generateStrictExcel()">📊 Descargar Excel</button>
         <button class="btn btn-reset" onclick="resetBus()">🗑️ Borrar Todo</button>
     </div>
 
@@ -268,7 +263,8 @@
                     <th>Pasajero</th>
                     <th>Nacionalidad</th>
                     <th>Cédula</th>
-                    <th>Estado</th> </tr>
+                    <th>Estado</th>
+                </tr>
             </thead>
             <tbody id="tableBody"></tbody>
         </table>
@@ -309,6 +305,8 @@
         </div>
     </div>
 
+    <input type="text" id="tempCopyInput">
+
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
         import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
@@ -336,8 +334,6 @@
 
         if (isViewOnly) {
             document.body.classList.add('view-mode');
-            // Ocultar controles de administración
-            document.querySelector('.controls').style.display = 'none';
         }
 
         function initBusMap() {
@@ -412,8 +408,6 @@
                     seatEl.classList.remove('occupied', 'paid');
                     if (data) {
                         nameEl.innerText = data.name.split(' ')[0];
-                        
-                        // Asignamos clases, pero el CSS 'view-mode' sobrescribirá 'paid' para que se vea gris
                         if (data.status === 'paid') {
                             seatEl.classList.add('paid');
                         } else {
@@ -502,38 +496,70 @@
         };
 
         window.copyViewLink = () => {
-            // Genera el link añadiendo el parámetro mode=view
             const baseUrl = window.location.href.split('?')[0];
             const url = `${baseUrl}?mode=view`;
-            
-            navigator.clipboard.writeText(url)
-                .then(() => alert("✅ Link copiado al portapapeles.\n\nEnvíalo a los pasajeros para que vean la distribución sin ver datos de pago."))
-                .catch(() => prompt("Copia este link:", url));
+            const tempInput = document.getElementById('tempCopyInput');
+            tempInput.value = url;
+            tempInput.select();
+            document.execCommand("copy");
+            alert("✅ Link de Solo Vista copiado al portapapeles.");
         };
 
-        window.downloadExcel = () => {
-            const wb = XLSX.utils.book_new();
-            const data = [["No", "NOMBRE DEL PASAJERO", "NACIONALIDAD", "CÉDULA/PASAPORTE", "ESTADO"]];
+        // --- FUNCION GENERAR EXCEL EXACTO (ANEXO NO.2) ---
+        window.generateStrictExcel = () => {
+            let dataRows = '';
             
+            // Iterar los 50 asientos del Zhontong
             for (let i = 1; i <= 50; i++) {
-                const p = busData[i];
-                if (p) {
-                    data.push([
-                        i, 
-                        p.name, 
-                        p.nation, 
-                        p.id, 
-                        p.status === 'paid' ? 'PAGADO' : 'PENDIENTE'
-                    ]);
-                } else {
-                    data.push([i, "", "", "", ""]);
-                }
+                const data = busData[i];
+                const name = data ? data.name : "";
+                const nation = (data && data.nation) ? data.nation : "";
+                const idNum = (data && data.id) ? data.id : "";
+
+                dataRows += `
+                <tr style="height: 34px;">
+                    <td class="cell-center">${i}</td>
+                    <td class="cell-center">${name}</td>
+                    <td class="cell-center">${nation}</td>
+                    <td class="cell-center" style="mso-number-format:'@'">${idNum}</td>
+                </tr>`;
             }
 
-            const ws = XLSX.utils.aoa_to_sheet(data);
-            ws['!cols'] = [{wch:5}, {wch:30}, {wch:15}, {wch:15}, {wch:12}];
-            XLSX.utils.book_append_sheet(wb, ws, "Zhontong 50 Pax");
-            XLSX.writeFile(wb, "Manifiesto_Zhontong_50Pax.xlsx");
+            const excelTemplate = `
+            <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+            <head>
+                <meta charset="UTF-8">
+                <style>
+                    body { font-family: 'Verdana', sans-serif; }
+                    td { border: 0.5pt solid black; font-family: 'Verdana', sans-serif; font-size: 7pt; vertical-align: middle; }
+                    .title-main { font-size: 11pt; font-weight: bold; text-align: center; border: none; background-color: transparent; }
+                    .title-sub { font-size: 7pt; font-weight: bold; text-align: center; border: none; background-color: #BFBFBF; }
+                    .header-cell { font-weight: bold; text-align: center; background-color: #BFBFBF; font-size: 7pt; }
+                    .cell-center { text-align: center; }
+                </style>
+            </head>
+            <body>
+                <table>
+                    <col width="70" style="width: 70px;"><col width="350" style="width: 350px;"><col width="280" style="width: 280px;"><col width="300" style="width: 300px;">
+                    <tr style="height: 34px;"><td colspan="4" class="title-main">ANEXO No.2</td></tr>
+                    <tr style="height: 34px;"><td colspan="4" class="title-sub">LISTA DE PASAJEROS</td></tr>
+                    <tr style="height: 34px;">
+                        <td class="header-cell">No</td><td class="header-cell">NOMBRE DEL PASAJERO</td>
+                        <td class="header-cell">NACIONALIDAD</td><td class="header-cell">CÉDULA/PASAPORTE</td>
+                    </tr>
+                    ${dataRows}
+                </table>
+            </body>
+            </html>`;
+
+            const blob = new Blob([excelTemplate], { type: 'application/vnd.ms-excel' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = "Anexo2_Manifiesto_Zhontong_50.xls";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
         };
 
         initBusMap();
