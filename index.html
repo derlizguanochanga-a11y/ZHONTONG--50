@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zhontong 50pax - Gestión de Pasajeros</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #00695C;
+            --secondary-color: #004D40;
+            --accent-color: #FF6F00;
+            --bg-color: #F5F7FA;
+            --text-color: #37474F;
+            --seat-free: #FFFFFF;
+            --seat-occupied: #CFD8DC; /* Gris estándar */
+            --seat-paid: #C8E6C9;     /* Verde pago */
+            --seat-border: #90A4AE;
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 {
+            color: var(--primary-color);
+            text-align: center;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom: 3px solid var(--accent-color);
+            padding-bottom: 10px;
+            width: 100%;
+            max-width: 900px;
+        }
+
+        #connectionStatus {
+            font-size: 12px;
+            padding: 5px 12px;
+            border-radius: 15px;
+            background: #e0e0e0;
+            color: #666;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+        .status-online { background: #C8E6C9 !important; color: #2E7D32 !important; }
+
+        /* CONTROLES */
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            color: white;
+            transition: transform 0.1s, box-shadow 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn:active { transform: scale(0.98); }
+        .btn-excel { background-color: #1B5E20; }
+        .btn-link { background-color: #0277BD; }
+        .btn-reset { background-color: #B71C1C; }
+
+        /* LEYENDA */
+        .legend {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            font-size: 12px;
+        }
+        .legend-item { display: flex; align-items: center; gap: 5px; }
+        .box { width: 15px; height: 15px; border: 1px solid #999; border-radius: 3px; }
+
+        /* MAPA DEL BUS */
+        .bus-layout {
+            background: white;
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            display: grid;
+            grid-template-columns: repeat(2, 60px) 40px repeat(2, 60px);
+            gap: 10px;
+            margin-bottom: 40px;
+            border: 2px solid #CFD8DC;
+        }
+
+        .seat {
+            height: 60px;
+            border: 2px solid var(--seat-border);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            background: var(--seat-free);
+            transition: all 0.2s;
+            position: relative;
+        }
+
+        .seat:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            border-color: var(--primary-color);
+        }
+
+        .seat.occupied { background-color: var(--seat-occupied); color: #555; border-color: #78909C; }
+        .seat.paid { background-color: var(--seat-paid); border-color: #2E7D32; color: #1B5E20; }
+
+        .seat-number { font-size: 14px; font-weight: 900; }
+        .seat-name { font-size: 9px; text-transform: uppercase; white-space: nowrap; overflow: hidden; max-width: 90%; text-overflow: ellipsis; }
+
+        .stairs-area {
+            grid-column: 4 / 6; 
+            border: 2px dashed #B0BEC5;
+            background-color: #ECEFF1;
+            border-radius: 8px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            font-size: 10px;
+            font-weight: bold;
+            color: #78909C;
+            text-transform: uppercase;
+        }
+
+        /* TABLA DE MANIFIESTO */
+        .manifest-section {
+            width: 100%;
+            max-width: 900px;
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 15px rgba(0,0,0,0.05);
+            margin-bottom: 50px;
+        }
+
+        .manifest-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: var(--primary-color);
+            margin-bottom: 15px;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+        }
+
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th { background-color: var(--secondary-color); color: white; padding: 12px; text-align: left; }
+        td { border-bottom: 1px solid #eee; padding: 10px; }
+        tr:hover { background-color: #E0F2F1; cursor: pointer; }
+        
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .badge-paid { background: #C8E6C9; color: #1B5E20; }
+        .badge-pending { background: #FFCCBC; color: #BF360C; }
+
+        /* --- ESTILOS ESPECIALES PARA MODO SOLO VISTA --- */
+        
+        /* 1. Ocultar la columna de Estado en la tabla (la última columna) */
+        body.view-mode th:last-child, 
+        body.view-mode td:last-child {
+            display: none !important;
+        }
+
+        /* 2. Forzar que todos los asientos pagados se vean igual que los ocupados (Gris neutral) */
+        body.view-mode .seat.paid {
+            background-color: var(--seat-occupied) !important;
+            border-color: #78909C !important;
+            color: #555 !important;
+        }
+
+        /* 3. Ocultar la leyenda de colores para no confundir */
+        body.view-mode .legend {
+            display: none !important;
+        }
+
+        /* 4. Quitar efectos de cursor */
+        body.view-mode .seat, body.view-mode tr {
+            cursor: default !important;
+        }
+        body.view-mode .seat:hover {
+            transform: none !important;
+            box-shadow: none !important;
+        }
+
+        /* MODAL */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 400px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        }
+
+        .modal h2 { margin-top: 0; color: var(--primary-color); border-bottom: 1px solid #eee; padding-bottom: 10px; }
+
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; font-size: 12px; font-weight: bold; margin-bottom: 5px; color: #555; }
+        .form-group input, .form-group select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 14px; }
+
+        .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+        .btn-save { background: var(--primary-color); flex: 1; }
+        .btn-cancel { background: #78909C; flex: 1; }
+        .btn-delete { background: #D32F2F; width: 100%; margin-top: 10px; }
+
+    </style>
+</head>
+<body>
+
+    <div id="connectionStatus">Conectando...</div>
+
+    <h1>Zhontong 50 Pax</h1>
+
+    <div class="controls">
+        <button class="btn btn-link" onclick="copyViewLink()">🔗 Link Solo Vista</button>
+        <button class="btn btn-excel" onclick="downloadExcel()">📊 Descargar Excel</button>
+        <button class="btn btn-reset" onclick="resetBus()">🗑️ Borrar Todo</button>
+    </div>
+
+    <div class="legend">
+        <div class="legend-item"><div class="box" style="background:white"></div>Libre</div>
+        <div class="legend-item"><div class="box" style="background:#CFD8DC"></div>Pendiente</div>
+        <div class="legend-item"><div class="box" style="background:#C8E6C9"></div>Pagado</div>
+    </div>
+
+    <div class="bus-layout" id="busGrid"></div>
+
+    <div class="manifest-section">
+        <div class="manifest-title">📋 Lista de Pasajeros</div>
+        <table id="passengerTable">
+            <thead>
+                <tr>
+                    <th style="width: 50px; text-align: center;">No.</th>
+                    <th>Pasajero</th>
+                    <th>Nacionalidad</th>
+                    <th>Cédula</th>
+                    <th>Estado</th> </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+        </table>
+    </div>
+
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal">
+            <h2 id="modalTitle">Asiento #</h2>
+            
+            <div class="form-group">
+                <label>Nombre Completo:</label>
+                <input type="text" id="inpName" placeholder="Apellido y Nombre">
+            </div>
+
+            <div class="form-group">
+                <label>Nacionalidad:</label>
+                <input type="text" id="inpNation" value="ECUATORIANO">
+            </div>
+
+            <div class="form-group">
+                <label>Cédula / Pasaporte:</label>
+                <input type="text" id="inpId" placeholder="Número de documento">
+            </div>
+
+            <div class="form-group">
+                <label>Estado de Pago:</label>
+                <select id="inpStatus">
+                    <option value="pending">⚠️ Pendiente (Por cobrar)</option>
+                    <option value="paid">✅ Pagado Total</option>
+                </select>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn btn-save" onclick="savePassenger()">Guardar</button>
+                <button class="btn btn-cancel" onclick="closeModal()">Cancelar</button>
+            </div>
+            <button class="btn btn-delete" onclick="deletePassenger()">Liberar Asiento</button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+        import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCYB_0QjoYocSkGT-R4lIz__9zRzX_Vpdc",
+            authDomain: "zhontnong-50.firebaseapp.com",
+            databaseURL: "https://zhontnong-50-default-rtdb.firebaseio.com",
+            projectId: "zhontnong-50",
+            storageBucket: "zhontnong-50.firebasestorage.app",
+            messagingSenderId: "92940508009",
+            appId: "1:92940508009:web:b6a5661282743e25c63bf8"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        const busRef = ref(db, 'asientos_zhontong_50');
+
+        let busData = {};
+        let selectedSeat = null;
+
+        // DETECTAR MODO VISTA
+        const urlParams = new URLSearchParams(window.location.search);
+        const isViewOnly = urlParams.get('mode') === 'view';
+
+        if (isViewOnly) {
+            document.body.classList.add('view-mode');
+            // Ocultar controles de administración
+            document.querySelector('.controls').style.display = 'none';
+        }
+
+        function initBusMap() {
+            const grid = document.getElementById('busGrid');
+            grid.innerHTML = '';
+            
+            let seatCount = 1;
+
+            for (let row = 1; row <= 13; row++) {
+                // Lado Izquierdo
+                addSeat(grid, seatCount++, 1);
+                addSeat(grid, seatCount++, 2);
+
+                // Lado Derecho
+                if (row === 2) {
+                    const stairs = document.createElement('div');
+                    stairs.className = 'stairs-area';
+                    stairs.innerHTML = '<div>🚪<br>Gradas<br>Puerta</div>';
+                    grid.appendChild(stairs);
+                } else {
+                    if (seatCount <= 50) addSeat(grid, seatCount++, 4);
+                    if (seatCount <= 50) addSeat(grid, seatCount++, 5);
+                }
+            }
+        }
+
+        function addSeat(container, number, colIndex) {
+            const seat = document.createElement('div');
+            seat.className = 'seat';
+            seat.id = `seat-${number}`;
+            seat.style.gridColumn = colIndex;
+            
+            if (colIndex === 1) seat.style.borderLeftWidth = '5px';
+            if (colIndex === 5) seat.style.borderRightWidth = '5px';
+
+            seat.innerHTML = `
+                <span class="seat-number">${number}</span>
+                <span class="seat-name" id="name-${number}">Libre</span>
+            `;
+            
+            seat.onclick = () => {
+                if(!isViewOnly) openModal(number);
+            };
+            
+            container.appendChild(seat);
+        }
+
+        onValue(busRef, (snapshot) => {
+            busData = snapshot.val() || {};
+            updateDisplay();
+            const statusDiv = document.getElementById('connectionStatus');
+            if(isViewOnly) {
+                statusDiv.innerText = "👀 Modo Espectador (Solo Lectura)";
+            } else {
+                statusDiv.innerText = "🟢 Conectado";
+                statusDiv.classList.add('status-online');
+            }
+        }, (error) => {
+            document.getElementById('connectionStatus').innerText = "🔴 Error Conexión";
+        });
+
+        function updateDisplay() {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+
+            for (let i = 1; i <= 50; i++) {
+                const data = busData[i];
+                const seatEl = document.getElementById(`seat-${i}`);
+                const nameEl = document.getElementById(`name-${i}`);
+
+                if (seatEl) {
+                    seatEl.classList.remove('occupied', 'paid');
+                    if (data) {
+                        nameEl.innerText = data.name.split(' ')[0];
+                        
+                        // Asignamos clases, pero el CSS 'view-mode' sobrescribirá 'paid' para que se vea gris
+                        if (data.status === 'paid') {
+                            seatEl.classList.add('paid');
+                        } else {
+                            seatEl.classList.add('occupied');
+                        }
+                    } else {
+                        nameEl.innerText = "Libre";
+                    }
+                }
+
+                const tr = document.createElement('tr');
+                tr.onclick = () => {
+                    if(!isViewOnly) openModal(i);
+                };
+
+                if (data) {
+                    const statusBadge = data.status === 'paid' 
+                        ? '<span class="status-badge badge-paid">Pagado</span>' 
+                        : '<span class="status-badge badge-pending">Pendiente</span>';
+
+                    tr.innerHTML = `
+                        <td style="text-align:center; font-weight:bold;">${i}</td>
+                        <td>${data.name}</td>
+                        <td>${data.nation || ''}</td>
+                        <td>${data.id || ''}</td>
+                        <td>${statusBadge}</td>
+                    `;
+                } else {
+                    tr.innerHTML = `
+                        <td style="text-align:center;">${i}</td>
+                        <td colspan="3" style="color:#ccc; font-style:italic;">Disponible</td>
+                        <td>-</td>
+                    `;
+                }
+                tbody.appendChild(tr);
+            }
+        }
+
+        window.openModal = (seatNum) => {
+            selectedSeat = seatNum;
+            const data = busData[seatNum] || {};
+            
+            document.getElementById('modalTitle').innerText = `Editar Asiento ${seatNum}`;
+            document.getElementById('inpName').value = data.name || '';
+            document.getElementById('inpNation').value = data.nation || 'ECUATORIANO';
+            document.getElementById('inpId').value = data.id || '';
+            document.getElementById('inpStatus').value = data.status || 'pending';
+            
+            document.getElementById('modalOverlay').style.display = 'flex';
+            document.getElementById('inpName').focus();
+        };
+
+        window.closeModal = () => {
+            document.getElementById('modalOverlay').style.display = 'none';
+        };
+
+        window.savePassenger = () => {
+            const name = document.getElementById('inpName').value.trim().toUpperCase();
+            if (!name) return alert("Por favor escribe un nombre.");
+
+            const passengerData = {
+                name: name,
+                nation: document.getElementById('inpNation').value.toUpperCase(),
+                id: document.getElementById('inpId').value,
+                status: document.getElementById('inpStatus').value
+            };
+
+            set(ref(db, `asientos_zhontong_50/${selectedSeat}`), passengerData)
+                .then(() => closeModal())
+                .catch(e => alert("Error al guardar: " + e.message));
+        };
+
+        window.deletePassenger = () => {
+            if (confirm(`¿Estás seguro de liberar el asiento ${selectedSeat}?`)) {
+                remove(ref(db, `asientos_zhontong_50/${selectedSeat}`))
+                    .then(() => closeModal());
+            }
+        };
+
+        window.resetBus = () => {
+            if (confirm("⚠️ ¿BORRAR TODOS LOS PASAJEROS?")) {
+                if (confirm("Esta acción no se puede deshacer. ¿Continuar?")) {
+                    remove(busRef);
+                }
+            }
+        };
+
+        window.copyViewLink = () => {
+            // Genera el link añadiendo el parámetro mode=view
+            const baseUrl = window.location.href.split('?')[0];
+            const url = `${baseUrl}?mode=view`;
+            
+            navigator.clipboard.writeText(url)
+                .then(() => alert("✅ Link copiado al portapapeles.\n\nEnvíalo a los pasajeros para que vean la distribución sin ver datos de pago."))
+                .catch(() => prompt("Copia este link:", url));
+        };
+
+        window.downloadExcel = () => {
+            const wb = XLSX.utils.book_new();
+            const data = [["No", "NOMBRE DEL PASAJERO", "NACIONALIDAD", "CÉDULA/PASAPORTE", "ESTADO"]];
+            
+            for (let i = 1; i <= 50; i++) {
+                const p = busData[i];
+                if (p) {
+                    data.push([
+                        i, 
+                        p.name, 
+                        p.nation, 
+                        p.id, 
+                        p.status === 'paid' ? 'PAGADO' : 'PENDIENTE'
+                    ]);
+                } else {
+                    data.push([i, "", "", "", ""]);
+                }
+            }
+
+            const ws = XLSX.utils.aoa_to_sheet(data);
+            ws['!cols'] = [{wch:5}, {wch:30}, {wch:15}, {wch:15}, {wch:12}];
+            XLSX.utils.book_append_sheet(wb, ws, "Zhontong 50 Pax");
+            XLSX.writeFile(wb, "Manifiesto_Zhontong_50Pax.xlsx");
+        };
+
+        initBusMap();
+
+        document.getElementById('modalOverlay').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('modalOverlay')) closeModal();
+        });
+
+    </script>
+</body>
+</html>
